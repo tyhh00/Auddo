@@ -1,4 +1,4 @@
-/* global AUDDO, CLIP, api */
+/* global AUDDO, CLIP, AuddoLive, api */
 const $ = (id) => document.getElementById(id);
 const SR = 48000;
 const { PARAMS, PRESETS } = AUDDO;
@@ -79,6 +79,15 @@ async function listDevices() {
   };
   fill($('inDev'), 'audioinput', /maono|pd400/i);
   fill($('outDev'), 'audiooutput', /maono|pd400/i);
+  const saved = pref('liveOutLabel');
+  fill($('liveOut'), 'audiooutput', /^CABLE Input/i);
+  if (!/CABLE Input/i.test($('liveOut').selectedOptions[0]?.textContent || '')) {
+    const v = [...$('liveOut').options].find((o) => /VB-Audio|Voicemeeter|Virtual/i.test(o.textContent));
+    if (v) $('liveOut').value = v.value;
+  }
+  if (saved) { const o = [...$('liveOut').options].find((x) => x.textContent === saved); if (o) $('liveOut').value = o.value; }
+  const hasCable = [...$('liveOut').options].some((o) => /CABLE Input|VB-Audio|Voicemeeter|Virtual/i.test(o.textContent));
+  $('cableHint').hidden = hasCable;
 }
 
 // ------------------------------------------------------------------ meter
@@ -578,12 +587,14 @@ function syncSliders() {
 function selectPreset(k) {
   S.presetKey = k; S.params = { ...PRESETS[k].params }; S.custom = false;
   syncSliders();
+  if (S.live.on) S.live.chain.setParams(S.params);
   if (S.source) { clearTimeout(renderTimer); render(); }
 }
 
 function setParam(k, v) {
   S.params[k] = v; S.custom = true;
   syncSliders();
+  if (S.live.on) S.live.chain.setParams(S.params);
   scheduleRender();
 }
 
@@ -614,7 +625,7 @@ async function init() {
     $('levelHint').textContent = 'Microphone unavailable: ' + e.message;
   }
   navigator.mediaDevices.ondevicechange = listDevices;
-  $('inDev').onchange = () => openInput($('inDev').value);
+  $('inDev').onchange = () => { openInput($('inDev').value); restartLive(); };
   $('outDev').onchange = async () => { try { await ensureCtx().setSinkId($('outDev').value); } catch (e) { console.warn(e); } };
   if ($('outDev').value) ensureCtx().setSinkId?.($('outDev').value).catch(() => {});
 
@@ -726,6 +737,19 @@ async function init() {
     } catch (e) { $('exportMsg').textContent = 'Export failed: ' + e.message; }
   };
 
+  $('liveEngine').value = pref('liveEngine') || 'gtcrn';
+  $('liveMonitor').checked = !!pref('liveMonitor');
+  $('liveBtn').onclick = () => (S.live.on ? stopLive() : goLive());
+  $('liveEngine').onchange = () => { pref('liveEngine', $('liveEngine').value); restartLive(); };
+  $('liveMonitor').onchange = () => { pref('liveMonitor', $('liveMonitor').checked); setMonitor(); };
+  $('liveOut').onchange = async () => {
+    pref('liveOutLabel', $('liveOut').selectedOptions[0]?.textContent || null);
+    if (S.live.on) { try { await S.live.ctx.setSinkId($('liveOut').value); } catch (e) { console.warn(e); } setMonitor(); goLiveBadge(); }
+  };
+  const goLiveBadge = () => ($('liveBadgeInfo').textContent = `→ ${$('liveOut').selectedOptions[0]?.textContent.replace(/\s*\(.*\)$/, '') || 'output'}`);
+  $('cableGet').onclick = () => api.openExternal('https://vb-audio.com/Cable/');
+  drawLiveMeter(null);
+
   $('guideBtn').onclick = () => $('guide').showModal();
   $('guideClose').onclick = () => $('guide').close();
 
@@ -745,6 +769,114 @@ async function refreshUsage() {
   const u = await api.libUsage();
   const mb = (b) => (b / 1048576).toFixed(0);
   $('usage').textContent = `Takes ${mb(u.takes)} MB · tracks ${mb(u.backing)} MB · cache ${mb(u.cache)} MB`;
+}
+
+// ------------------------------------------------------------------ live (real-time) chain
+const LS = (() => { try { return window.localStorage; } catch { return null; } })();
+function pref(k, v) {
+  try {
+    if (v === undefined) return LS ? JSON.parse(LS.getItem('auddo.' + k)) : null;
+    LS && LS.setItem('auddo.' + k, JSON.stringify(v));
+  } catch { return null; }
+}
+
+S.live = { on: false, meters: [] };
+window.__live = S.live; // test hook
+
+async function goLive() {
+  const L = S.live;
+  if (L.on || L.starting) return;
+  L.starting = true;
+  $('liveBtn').disabled = true; $('liveBtn').textContent = 'Starting…';
+  try {
+    const ctx = new AudioContext({ sampleRate: SR, latencyHint: 'interactive' });
+    const sink = $('liveOut').value;
+    if (sink && sink !== 'default') await ctx.setSinkId(sink);
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        deviceId: $('inDev').value ? { exact: $('inDev').value } : undefined,
+        echoCancellation: false, noiseSuppression: false, autoGainControl: false,
+        channelCount: { ideal: 1 }, sampleRate: { ideal: SR }, sampleSize: { ideal: 24 },
+      },
+    });
+    const src = ctx.createMediaStreamSource(stream);
+    const engine = $('liveEngine').value;
+    const chain = await AuddoLive.build(ctx, src, S.params, engine);
+    chain.output.connect(ctx.destination);
+    chain.meter.onmessage = (e) => onLiveMeter(e.data);
+    await ctx.resume();
+    const inLat = stream.getAudioTracks()[0].getSettings().latency || 0.01;
+    Object.assign(L, {
+      on: true, ctx, stream, src, chain, engine, meters: [],
+      latencyMs: (chain.latencySamples / SR + (ctx.baseLatency || 0) + (ctx.outputLatency || 0) + inLat) * 1000,
+    });
+    await setMonitor();
+    $('liveBox').classList.add('on'); $('liveBadge').hidden = false;
+    $('liveBtn').textContent = 'Stop live';
+    $('liveBadgeInfo').textContent = `→ ${$('liveOut').selectedOptions[0]?.textContent.replace(/\s*\(.*\)$/, '') || 'output'}`;
+  } catch (e) {
+    $('liveStats').textContent = 'Could not go live: ' + e.message;
+    $('liveBtn').textContent = 'Go live';
+    stopLive();
+  } finally {
+    L.starting = false; $('liveBtn').disabled = false;
+  }
+}
+
+async function setMonitor() {
+  const L = S.live;
+  if (L.monitorEl) { L.monitorEl.pause(); L.monitorEl.srcObject = null; L.monitorEl = null; }
+  if (L.monitorDest) { try { L.chain.output.disconnect(L.monitorDest); } catch {} L.monitorDest = null; }
+  if (!L.on || !$('liveMonitor').checked) return;
+  // Same device as the live output would just double the signal.
+  if ($('outDev').value === $('liveOut').value) return;
+  L.monitorDest = L.ctx.createMediaStreamDestination();
+  L.chain.output.connect(L.monitorDest);
+  const el = new Audio();
+  el.srcObject = L.monitorDest.stream;
+  try { if ($('outDev').value) await el.setSinkId($('outDev').value); } catch {}
+  await el.play().catch(() => {});
+  L.monitorEl = el;
+}
+
+function stopLive() {
+  const L = S.live;
+  try { L.chain && L.chain.dispose(); } catch {}
+  try { L.stream && L.stream.getTracks().forEach((t) => t.stop()); } catch {}
+  if (L.monitorEl) { L.monitorEl.pause(); L.monitorEl.srcObject = null; }
+  try { L.ctx && L.ctx.close(); } catch {}
+  Object.assign(L, { on: false, ctx: null, stream: null, src: null, chain: null, monitorEl: null, monitorDest: null });
+  $('liveBox').classList.remove('on'); $('liveBadge').hidden = true;
+  $('liveBtn').textContent = 'Go live';
+  drawLiveMeter(null);
+}
+
+async function restartLive() { if (S.live.on) { stopLive(); await goLive(); } }
+
+function onLiveMeter(m) {
+  const L = S.live;
+  L.meters.push(m); if (L.meters.length > 400) L.meters.shift();
+  drawLiveMeter(m);
+  const now = performance.now();
+  if (!L.statT || now - L.statT > 250) {
+    L.statT = now;
+    $('liveStats').textContent = `≈${Math.round(L.latencyMs)} ms delay · leveler ${m.leveler >= 0 ? '+' : ''}${m.leveler.toFixed(1)} dB · limiter ${m.limiter < -0.1 ? m.limiter.toFixed(1) + ' dB' : 'idle'}`;
+  }
+}
+
+function drawLiveMeter(m) {
+  const c = $('liveMeter'), g = c.getContext('2d');
+  const w = c.width = c.clientWidth * devicePixelRatio, h = c.height = 26 * devicePixelRatio;
+  const x = (db) => Math.max(0, Math.min(1, (db + 60) / 60)) * w;
+  g.fillStyle = '#0f1218'; g.fillRect(0, 0, w, h);
+  g.fillStyle = 'rgba(228,111,163,.12)'; g.fillRect(x(-24), 0, x(-9) - x(-24), h);
+  if (!m) return;
+  const grad = g.createLinearGradient(0, 0, w, 0);
+  grad.addColorStop(0, '#7d3a63'); grad.addColorStop(0.7, '#e46fa3'); grad.addColorStop(1, '#ffd0e4');
+  g.fillStyle = grad;
+  g.fillRect(0, h * 0.2, x(m.peak), h * 0.3);
+  g.globalAlpha = 0.6; g.fillRect(0, h * 0.55, x(m.rms), h * 0.25); g.globalAlpha = 1;
+  g.fillStyle = '#fff'; g.fillRect(x(-1), 0, 1.5 * devicePixelRatio, h);
 }
 
 function setAB(v) {

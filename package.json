@@ -9,10 +9,12 @@
     "test": "node test/dsp.test.js",
     "test:e2e": "node test/e2e.js",
     "test:yt": "node test/yt.e2e.js",
-    "test:lib": "node test/library.e2e.js"
+    "test:lib": "node test/library.e2e.js",
+    "test:live": "node test/live.e2e.js"
   },
   "license": "MIT",
   "dependencies": {
+    "@sapphi-red/web-noise-suppressor": "^0.4.1",
     "ffmpeg-static": "^5.3.0"
   },
   "devDependencies": {

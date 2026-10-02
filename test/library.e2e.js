@@ -52,14 +52,15 @@ async function pcm(file) {
   page.on('pageerror', (e) => console.log('[pageerror]', e.message));
   await page.waitForFunction(() => window.__ready, null, { timeout: 30000 });
 
-  // 1) live: meter flags clipping that sits well below 0 dBFS
+  // 1) take: open it first (an open take is protected from the auto-clean that runs 8 s after launch)
+  const t0 = Date.now();
+  await page.click(`.takes li[data-file="${clipped.replace(/\\/g, '\\\\')}"]`);
+
+  // 2) live: meter flags clipping that sits well below 0 dBFS
   await page.waitForFunction(() => /BEFORE THE APP/.test(document.getElementById('levelHint').textContent), null, { timeout: 15000 }).catch(() => {});
   const hint = await page.textContent('#levelHint');
   check(/BEFORE THE APP/.test(hint), `live meter: "${hint.slice(0, 70)}…"`);
 
-  // 2) take: banner + repair on by default, render runs the declip pass
-  const t0 = Date.now();
-  await page.click(`.takes li[data-file="${clipped.replace(/\\/g, '\\\\')}"]`);
   await page.waitForFunction(() => window.__S.proc, null, { timeout: 180000 });
   const st = await page.evaluate(() => ({ clip: window.__S.clip, banner: !document.getElementById('clipBanner').hidden, repair: document.getElementById('repair').checked }));
   check(st.clip.clipped && st.banner && st.repair, `take flagged (ceiling ${st.clip.ceilingDb} dBFS, ${Math.round(st.clip.share * 100)}%) with repair on; render ${((Date.now() - t0) / 1000).toFixed(1)} s`);

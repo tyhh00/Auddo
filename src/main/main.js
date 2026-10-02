@@ -158,6 +158,15 @@ ipcMain.handle('file:read', async (_e, file) => {
   return data;
 });
 
+// ---------------------------------------------------------------- live chain assets
+const NS_DIST = path.join(ROOT, 'node_modules', '@sapphi-red', 'web-noise-suppressor', 'dist');
+ipcMain.handle('asset:wasm', (_e, name) => {
+  if (!/^(gtcrn|rnnoise|rnnoise_simd)$/.test(name)) throw new Error('unknown wasm');
+  return fs.readFileSync(path.join(NS_DIST, name + '.wasm').replace('app.asar', 'app.asar.unpacked'));
+});
+const EXTERNAL = ['https://vb-audio.com/Cable/'];
+ipcMain.handle('open:external', (_e, url) => (EXTERNAL.includes(url) ? shell.openExternal(url) : null));
+
 // ---------------------------------------------------------------- processing
 let jobSeq = 0;
 ipcMain.handle('dsp:info', () => ({ ...dsp.capabilities(), model: fs.existsSync(MODEL), presets: Object.keys(PRESETS) }));

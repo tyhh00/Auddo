@@ -2,13 +2,14 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; media-src 'self' blob:; img-src 'self' data:">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; media-src 'self' blob:; img-src 'self' data:">
   <title>Auddo</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
   <header>
     <div class="brand"><span class="logo">◆</span> Auddo <small>voice studio</small></div>
+    <div class="live-badge" id="liveBadge" hidden><span class="dot"></span> LIVE <span id="liveBadgeInfo"></span></div>
     <div class="status" id="engine">engine…</div>
     <button class="ghost" id="guideBtn">Recording guide</button>
   </header>
@@ -17,6 +18,7 @@
     <!-- ============ CAPTURE ============ -->
     <section class="panel capture">
       <h2>Capture</h2>
+
       <label class="field">Microphone<select id="inDev"></select></label>
       <label class="field">Output / headphones<select id="outDev"></select></label>
 
@@ -66,6 +68,22 @@
         <div class="hint">Goes to the Recycle Bin. Starred takes, their tracks, the open take and your exports are never touched. Render cache is cleared daily.</div>
         <div class="row gap"><span class="small muted" id="usage"></span><button class="ghost small" id="cleanNow">Clean now</button></div>
         <div class="hint" id="cleanMsg"></div>
+      </div>
+
+      <div class="live bottom" id="liveBox">
+        <div class="live-head"><b>Live voice</b><span class="muted small">for Discord, OBS, calls</span></div>
+        <label class="field">Send processed voice to<select id="liveOut"></select></label>
+        <div class="cable-hint" id="cableHint" hidden>
+          No virtual cable found. Install the free <b>VB-CABLE</b>, then pick <i>CABLE Input</i> here and <i>CABLE Output</i> as the mic in Discord.
+          <button class="ghost small" id="cableGet">Get VB-CABLE</button>
+        </div>
+        <div class="live-row">
+          <label class="field">AI denoise<select id="liveEngine"><option value="gtcrn">GTCRN (best)</option><option value="rnnoise">RNNoise (light CPU)</option></select></label>
+          <label class="check" title="Plays the processed voice in your headphones. Adds the live chain's delay, so it is for checking the sound, not for singing along."><input type="checkbox" id="liveMonitor"> Hear myself</label>
+        </div>
+        <canvas id="liveMeter" height="26"></canvas>
+        <div class="live-stats small" id="liveStats">Uses the preset and sliders on the right; changes apply instantly.</div>
+        <button id="liveBtn" class="live-btn">Go live</button>
       </div>
     </section>
 
@@ -165,12 +183,21 @@
         <li><b>Room tone.</b> Keep the "2 s room tone" option on and stay still. It gives the denoiser a fingerprint of your room.</li>
         <li><b>Takes.</b> Everything records as 32-bit float WAV into Music\Auddo, untouched. Presets are applied on a copy, so you can re-render any time.</li>
       </ol>
+      <h3>Going live (Discord, OBS, calls)</h3>
+      <ol>
+        <li><b>Discord / Zoom / games</b> need a virtual microphone. Install the free <b>VB-CABLE</b>, pick <i>CABLE Input</i> under "Send processed voice to", press <b>Go live</b>, and choose <i>CABLE Output</i> as the input device in Discord. In Discord, turn <i>off</i> Krisp noise suppression, echo cancellation and automatic gain: Auddo already did that work and they will fight it.</li>
+        <li><b>OBS</b>: either add <i>CABLE Output</i> as an Audio Input Capture, or skip the cable and add an <i>Application Audio Capture</i> source pointed at Auddo.</li>
+        <li><b>Latency</b> is around 40–60 ms end to end (the AI denoiser needs about 21 ms with RNNoise, or 32 ms with GTCRN). That's fine for talking and streaming. To sing along, monitor through the PD400X headphone jack rather than "Hear myself".</li>
+        <li>Recording still works while live. The take is captured raw, so you can render it with the full offline chain afterwards.</li>
+      </ol>
       <div class="row end"><button id="guideClose" class="primary">Got it</button></div>
     </article>
   </dialog>
 
   <script src="../shared/presets.js"></script>
   <script src="../shared/clip.js"></script>
+  <script src="../shared/ir.js"></script>
+  <script src="live.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

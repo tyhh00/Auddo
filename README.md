@@ -1,6 +1,6 @@
 # Auddo
 
-**A desktop voice studio for home singers and speakers.** Record against a backing track, then turn a raw USB-mic take into a polished vocal with one click. There are two signature presets: **KTV Vocal**, a glossy karaoke voice with lush reverb and echo, and **Hi-Fi Studio**, an intimate, dead-quiet, detailed vocal for premium headphones.
+**A desktop voice studio for home singers and speakers.** Record against a backing track and turn a raw USB-mic take into a polished vocal with one click, or go **live** and send the processed voice to Discord, OBS or any call in real time. There are two signature presets: **KTV Vocal**, a glossy karaoke voice with lush reverb and echo, and **Hi-Fi Studio**, an intimate, dead-quiet, detailed vocal for premium headphones.
 
 Built with Electron and FFmpeg for Windows. Tuned for end-address dynamic mics like the Maono PD400X / Shure SM7B family, but it works with any input.
 
@@ -17,6 +17,15 @@ Built with Electron and FFmpeg for Windows. Tuned for end-address dynamic mics l
 - An optional **2 s room-tone capture** at the start: stay silent and the denoiser learns your room's fingerprint.
 
 ![Recording against a backing track](docs/screenshots/recording.png)
+
+### 🔴 Live voice for Discord, OBS and calls
+- The same presets and sliders, running **in real time**: AI denoise, expander, two-stage compressor, EQ, harmonic sheen, de-esser, stereo reverb and echo, a voice-gated loudness leveler and a look-ahead limiter at −1 dBFS.
+- Choose the AI denoiser: **GTCRN** (best quality) or **RNNoise** (lighter on CPU). Both run as WebAssembly inside an AudioWorklet.
+- Send the output to any audio device. With the free [VB-CABLE](https://vb-audio.com/Cable/) installed, Auddo picks *CABLE Input* automatically; select *CABLE Output* as your mic in Discord, Zoom or games. In OBS, use *Application Audio Capture* on Auddo, or the cable.
+- Slider and preset changes apply **instantly** while you're live. An optional "Hear myself" monitor plays to your headphones.
+- Live meter shows the end-to-end delay estimate, leveler gain and limiter activity. The AI denoiser needs about 21 ms (RNNoise) or 32 ms (GTCRN) of look-ahead, plus your devices' buffers.
+
+![Live voice routed to a virtual cable](docs/screenshots/live.png)
 
 ### 🎤 Sing against a backing track
 - Load any audio file as the backing track, or **paste a YouTube link**. Auddo downloads the best audio stream and saves an MP3 into `Music\Auddo\Backing`, ready to sing over. yt-dlp is fetched automatically on first use and self-updates when YouTube changes; nothing else to install.
@@ -78,6 +87,8 @@ input → 4th-order high-pass → mouth de-click → [clip repair] → RNNoise (
       → EBU R128 loudness → 4× oversampled limiter at −1 dBTP
 ```
 
+The live chain mirrors this with Web Audio: biquad EQ, AudioWorklets for the dynamics, de-esser, leveler and limiter, a ConvolverNode fed the same generated impulse response, and a WASM neural denoiser. The dry path is delay-compensated to the denoiser's measured latency, so partial denoise mixes don't comb-filter.
+
 The reverb and echo are built as an impulse response generated in code: decorrelated left/right tails that darken as they decay, plus early reflections. That gives width on headphones without phasey tricks. The chain adds **zero latency**, so exports stay sample-aligned with the backing track.
 
 ## Getting started
@@ -103,6 +114,7 @@ npm start
 npm test           # DSP: loudness accuracy, true-peak ceiling, noise reduction, zero added latency
 npm run test:e2e   # drives the real app with a fake mic: record → render → A/B → export
 npm run test:lib   # clipping detection + repair, takes library, auto-clean, sync range
+npm run test:live  # live chain: denoiser latency, noise reduction, loudness, -1 dBFS ceiling, going live
 npm run test:yt    # paste a YouTube link (needs network)
 node scripts/screenshots.js   # regenerate the screenshots above from a synthetic demo
 ```
@@ -111,7 +123,8 @@ The end-to-end tests use Playwright's Electron driver with Chromium's fake captu
 
 ## Built on
 - [FFmpeg](https://ffmpeg.org) via [ffmpeg-static](https://github.com/eugeneware/ffmpeg-static): filters, loudness, encoding
-- [RNNoise](https://github.com/xiph/rnnoise) models from [GregorR/rnnoise-models](https://github.com/GregorR/rnnoise-models)
+- [RNNoise](https://github.com/xiph/rnnoise) models from [GregorR/rnnoise-models](https://github.com/GregorR/rnnoise-models) (offline)
+- [@sapphi-red/web-noise-suppressor](https://github.com/sapphi-red/web-noise-suppressor): RNNoise and [GTCRN](https://github.com/Xiaobin-Rong/gtcrn) as WebAssembly worklets (live)
 - [yt-dlp](https://github.com/yt-dlp/yt-dlp): backing-track downloads
 - [Electron](https://www.electronjs.org)
 

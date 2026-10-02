@@ -110,6 +110,19 @@ const rendered = (page) => page.waitForFunction(() => window.__S.proc && !docume
   await shot(page, 'hifi.png');
   await page.click('#playBtn');
 
+  // Live mode, routed to a virtual cable (the fake output device is relabelled as one).
+  await page.evaluate(() => {
+    const o = document.querySelector('#liveOut option');
+    o.textContent = 'CABLE Input (VB-Audio Virtual Cable)';
+    document.getElementById('cableHint').hidden = true;
+    document.querySelector('.capture').scrollTop = 1e6;
+  });
+  await page.click('#liveBtn');
+  await page.waitForFunction(() => window.__live && window.__live.meters.length > 60, null, { timeout: 30000 });
+  await page.waitForFunction(() => { const m = window.__live.meters.at(-1); return m && m.rms > -40; }, null, { timeout: 20000 }).catch(() => {});
+  await shot(page, 'live.png');
+  await page.click('#liveBtn');
+
   await page.click('#guideBtn');
   await page.waitForTimeout(300);
   await shot(page, 'guide.png');

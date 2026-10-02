@@ -23,5 +23,7 @@ contextBridge.exposeInMainWorld('api', {
   ytFetch: (url) => ipcRenderer.invoke('yt:fetch', url),
   ytCancel: () => ipcRenderer.invoke('yt:cancel'),
   onYtProgress: (cb) => ipcRenderer.on('yt:progress', (_e, p) => cb(p)),
+  readWasm: (name) => ipcRenderer.invoke('asset:wasm', name),
+  openExternal: (url) => ipcRenderer.invoke('open:external', url),
   onProgress: (cb) => ipcRenderer.on('dsp:progress', (_e, p) => cb(p)),
 });

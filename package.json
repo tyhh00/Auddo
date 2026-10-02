@@ -1,0 +1,22 @@
+{
+  "name": "auddo",
+  "productName": "Auddo",
+  "version": "0.1.0",
+  "description": "Voice recorder + processor with KTV and Hi-Fi presets (Electron + ffmpeg)",
+  "main": "src/main/main.js",
+  "scripts": {
+    "start": "electron .",
+    "test": "node test/dsp.test.js",
+    "test:e2e": "node test/e2e.js",
+    "test:yt": "node test/yt.e2e.js",
+    "test:lib": "node test/library.e2e.js"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "ffmpeg-static": "^5.3.0"
+  },
+  "devDependencies": {
+    "electron": "^37.10.3",
+    "playwright": "^1.63.0"
+  }
+}

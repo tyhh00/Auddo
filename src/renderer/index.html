@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; media-src 'self' blob:; img-src 'self' data:">
+  <title>Auddo</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header>
+    <div class="brand"><span class="logo">◆</span> Auddo <small>voice studio</small></div>
+    <div class="status" id="engine">engine…</div>
+    <button class="ghost" id="guideBtn">Recording guide</button>
+  </header>
+
+  <main>
+    <!-- ============ CAPTURE ============ -->
+    <section class="panel capture">
+      <h2>Capture</h2>
+      <label class="field">Microphone<select id="inDev"></select></label>
+      <label class="field">Output / headphones<select id="outDev"></select></label>
+
+      <div class="meter-wrap">
+        <canvas id="meter" width="300" height="34"></canvas>
+        <div class="meter-read"><span id="peakRead">–∞</span> peak · <span id="rmsRead">–∞</span> rms · floor <span id="floorRead">–</span></div>
+        <div class="hint" id="levelHint">Sing your loudest line: peaks should land in the green zone (−18 to −6 dBFS).</div>
+      </div>
+
+      <div class="backing">
+        <div class="row">
+          <button id="backingBtn">Load backing track</button>
+          <button class="ghost small" id="backingClear" hidden>✕</button>
+        </div>
+        <div class="file-name" id="backingName">No backing track (optional, for KTV)</div>
+        <div class="yt">
+          <input id="ytUrl" type="text" placeholder="Paste a YouTube link…" spellcheck="false">
+          <button id="ytBtn">Get</button>
+        </div>
+        <div class="yt-status" id="ytStatus" hidden>
+          <div class="progress"><div id="ytProg"></div></div>
+          <div class="row"><span class="hint" id="ytStage"></span><button class="ghost small" id="ytCancel">Cancel</button></div>
+        </div>
+      </div>
+
+      <label class="check"><input type="checkbox" id="roomTone" checked> Capture 2 s room tone first <span class="muted">(stay silent, it trains the denoiser)</span></label>
+
+      <div class="rec-row">
+        <button id="recBtn" class="rec"><span class="dot"></span><span id="recLabel">Record</span></button>
+        <div class="timer" id="timer">00:00.0</div>
+      </div>
+      <div class="rec-banner" id="recBanner" hidden></div>
+
+      <div class="row gap">
+        <button class="ghost" id="importBtn">+ Add audio file…</button>
+        <button class="ghost" id="revealBtn">Takes folder</button>
+      </div>
+      <h3>Takes <span class="muted small">☆ = keep forever</span></h3>
+      <ul class="takes" id="takes"></ul>
+
+      <h3>Storage</h3>
+      <div class="storage">
+        <label class="check"><input type="checkbox" id="autoClean"> Auto-clean after
+          <select id="cleanDays"><option value="3">3</option><option value="7">7</option><option value="14">14</option><option value="30">30</option></select> days</label>
+        <label class="check sub"><input type="checkbox" id="cleanTakes"> unstarred takes</label>
+        <label class="check sub"><input type="checkbox" id="cleanBacking"> downloaded tracks not used since</label>
+        <div class="hint">Goes to the Recycle Bin. Starred takes, their tracks, the open take and your exports are never touched. Render cache is cleared daily.</div>
+        <div class="row gap"><span class="small muted" id="usage"></span><button class="ghost small" id="cleanNow">Clean now</button></div>
+        <div class="hint" id="cleanMsg"></div>
+      </div>
+    </section>
+
+    <!-- ============ STAGE ============ -->
+    <section class="panel stage">
+      <div class="stage-head">
+        <div class="src">
+          <div class="file-name big" id="srcName">Record a take or open a file</div>
+          <button class="ghost small" id="starCur" hidden title="Keep forever (exempt from auto-clean)">☆ Keep</button>
+          <button class="ghost small danger" id="delCur" hidden title="Move this take to the Recycle Bin">Delete take</button>
+        </div>
+        <div class="ab" id="ab">
+          <button data-ab="A">A · Original</button>
+          <button data-ab="B" class="on">B · Processed</button>
+        </div>
+      </div>
+      <div class="clip-banner" id="clipBanner" hidden></div>
+      <canvas id="wave" height="220"></canvas>
+      <div class="transport">
+        <button id="playBtn" class="play" disabled>▶</button>
+        <button id="stopBtn" class="ghost" disabled>■</button>
+        <div class="time"><span id="pos">0:00.0</span> / <span id="dur">0:00.0</span></div>
+        <label class="check"><input type="checkbox" id="matched" checked> Level-matched A/B</label>
+        <span class="muted small">Space = play · A/B keys = compare</span>
+      </div>
+      <canvas id="spec" height="120"></canvas>
+      <div class="stats" id="stats">
+        <div><b id="sOrig">–</b><span>original LUFS</span></div>
+        <div><b id="sFinal">–</b><span>processed LUFS</span></div>
+        <div><b id="sTP">–</b><span>true peak dBTP</span></div>
+        <div><b id="sLRA">–</b><span>loudness range LU</span></div>
+        <div><b id="sFloor">–</b><span>room-tone floor dBFS</span></div>
+      </div>
+
+      <div class="sync" id="syncBox" hidden>
+        <h3>Backing sync</h3>
+        <div class="sync-row">
+          <label>Vocal timing <span class="muted small">earlier ← → later</span></label>
+          <input type="range" id="sync" min="-2000" max="2000" step="1" value="0">
+          <div class="sync-num"><input type="number" id="syncNum" step="1" value="0"><span>ms</span></div>
+          <div class="row">
+            <button class="ghost small" id="syncMinus" title="Vocal 10 ms earlier (Shift: 1 ms)">−10</button>
+            <button class="ghost small" id="syncPlus" title="Vocal 10 ms later (Shift: 1 ms)">+10</button>
+            <button class="ghost small" id="syncReset" title="Back to the measured latency">Auto</button>
+          </div>
+        </div>
+        <div class="sync-row">
+          <label>Vocal level</label><input type="range" id="vocDb" min="-12" max="12" step="0.5" value="0"><output id="vocOut">0 dB</output>
+        </div>
+        <div class="sync-row">
+          <label>Backing level</label><input type="range" id="bakDb" min="-24" max="6" step="0.5" value="-6"><output id="bakOut">−6 dB</output>
+        </div>
+        <div class="hint">If you sound late against the track, move the vocal earlier (left / negative). Bluetooth earpieces are typically 150–300 ms late, some much more; wired headphones on the PD400X jack need ~0. The value is saved with the take. <span id="syncTotal"></span></div>
+      </div>
+    </section>
+
+    <!-- ============ PROCESS ============ -->
+    <section class="panel process">
+      <h2>Sound</h2>
+      <div class="presets" id="presets"></div>
+      <label class="check repair" id="repairWrap" hidden><input type="checkbox" id="repair"> <span><b>Repair clipping</b> <span class="muted" id="repairInfo"></span></span></label>
+      <div class="custom-note" id="customNote" hidden>Custom, based on <b id="customBase"></b> <button class="ghost small" id="revert">Revert</button></div>
+      <div id="sliders"></div>
+      <div class="proc-row">
+        <label class="check"><input type="checkbox" id="auto" checked> Auto-render</label>
+        <button id="procBtn" class="primary" disabled>Render</button>
+      </div>
+      <div class="progress"><div id="prog"></div></div>
+      <div class="err" id="err" hidden></div>
+
+      <h2>Export</h2>
+      <label class="field">Format
+        <select id="fmt">
+          <option value="wav24">WAV 24-bit / 48 kHz (master)</option>
+          <option value="flac24">FLAC 24-bit / 48 kHz (lossless, smaller)</option>
+          <option value="wav16">WAV 16-bit dithered (CD-style)</option>
+          <option value="mp3">MP3 320 kbps (sharing)</option>
+        </select>
+      </label>
+      <label class="check" id="mixWrap" hidden><input type="checkbox" id="mixBacking" checked> Mix with backing track</label>
+      <button id="exportBtn" class="primary wide" disabled>Export…</button>
+      <div class="hint" id="exportMsg"></div>
+    </section>
+  </main>
+
+  <dialog id="guide">
+    <article>
+      <h2>Getting the best take out of the PD400X</h2>
+      <p class="muted">The PD400X is an end-address dynamic in the SM7B mould: cardioid, 40 Hz – 16 kHz, 24-bit/48 kHz over USB. It rejects the room very well, but only if you work it close.</p>
+      <ol>
+        <li><b>Connection.</b> USB-C straight into the PC (not a hub). Use the mic's own headphone jack for monitoring: it's zero-latency. Avoid Bluetooth headphones while recording to a track.</li>
+        <li><b>Maono Link.</b> Turn its EQ, compressor and limiter <i>off</i> so you capture a raw signal. Auddo does that processing better offline, and you can't undo DSP that's baked into the take.</li>
+        <li><b>Windows.</b> Sound settings → PD400X → Properties: set the format to <i>24-bit, 48000 Hz</i>; turn <i>Audio enhancements</i> off. Set the input volume to 100 and use the mic's gain knob for level.</li>
+        <li><b>Gain.</b> Set Windows' mic level to <i>100</i> and Maono Link's output/limiter to neutral, then do all level setting with the <i>mic's gain knob</i>. Sing the loudest phrase; aim for peaks around −10 dBFS. If any digital volume sits <i>after</i> a hot gain knob, the mic clips while the meter still looks fine; Auddo flags that as "clipping before the app".</li>
+        <li><b>Distance.</b> 5–8 cm (2–3 fingers) for speech and intimate Hi-Fi; 8–15 cm for belting. Lean back on loud notes instead of riding the gain. Stay on-axis: sing <i>into</i> the top of the grille.</li>
+        <li><b>Room.</b> Soft room beats big room: curtains, bed, a duvet behind you. Kill fans and aircon for the take. Mic away from the PC.</li>
+        <li><b>Room tone.</b> Keep the "2 s room tone" option on and stay still. It gives the denoiser a fingerprint of your room.</li>
+        <li><b>Takes.</b> Everything records as 32-bit float WAV into Music\Auddo, untouched. Presets are applied on a copy, so you can re-render any time.</li>
+      </ol>
+      <div class="row end"><button id="guideClose" class="primary">Got it</button></div>
+    </article>
+  </dialog>
+
+  <script src="../shared/presets.js"></script>
+  <script src="../shared/clip.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

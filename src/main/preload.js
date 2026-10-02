@@ -1,0 +1,27 @@
+const { contextBridge, ipcRenderer } = require('electron');
+
+contextBridge.exposeInMainWorld('api', {
+  recBegin: (rate) => ipcRenderer.invoke('rec:begin', { rate }),
+  recChunk: (buf) => ipcRenderer.send('rec:chunk', buf),
+  recEnd: (meta) => ipcRenderer.invoke('rec:end', meta),
+  takes: () => ipcRenderer.invoke('takes:list'),
+  deleteTake: (file) => ipcRenderer.invoke('takes:delete', file),
+  keepTake: (file, keep) => ipcRenderer.invoke('takes:keep', file, keep),
+  importTake: (file) => ipcRenderer.invoke('takes:import', file),
+  takeMeta: (file, patch) => ipcRenderer.invoke('takes:meta', file, patch),
+  libSettings: (patch) => ipcRenderer.invoke('lib:settings', patch),
+  libUsage: () => ipcRenderer.invoke('lib:usage'),
+  libClean: () => ipcRenderer.invoke('lib:clean'),
+  libOpen: (files) => ipcRenderer.send('lib:open', files),
+  onCleaned: (cb) => ipcRenderer.on('lib:cleaned', (_e, r) => cb(r)),
+  reveal: (file) => ipcRenderer.invoke('takes:reveal', file),
+  openFile: (kind) => ipcRenderer.invoke('file:open', kind),
+  readFile: (file) => ipcRenderer.invoke('file:read', file),
+  info: () => ipcRenderer.invoke('dsp:info'),
+  process: (job) => ipcRenderer.invoke('dsp:process', job),
+  exportMix: (opts) => ipcRenderer.invoke('dsp:export', opts),
+  ytFetch: (url) => ipcRenderer.invoke('yt:fetch', url),
+  ytCancel: () => ipcRenderer.invoke('yt:cancel'),
+  onYtProgress: (cb) => ipcRenderer.on('yt:progress', (_e, p) => cb(p)),
+  onProgress: (cb) => ipcRenderer.on('dsp:progress', (_e, p) => cb(p)),
+});

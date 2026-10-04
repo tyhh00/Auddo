@@ -179,6 +179,8 @@ async function startRecording() {
     src.start(at);
     S.recBackingNode = src;
     S.backingStartFrame = Math.round(at * ctx.sampleRate);
+    S.backClock = { t0: at, pos0: 0 };
+    if (S.backingVideo) { S.theaterBefore = isTheater(); setTheater(true); }
   }
   recBannerLoop();
 }
@@ -196,6 +198,8 @@ function recBannerLoop() {
 async function stopRecording() {
   S.recording = false;
   if (S.recBackingNode) { try { S.recBackingNode.stop(); } catch {} S.recBackingNode = null; }
+  S.backClock = null;
+  if (S.theaterBefore !== undefined) { setTheater(S.theaterBefore); S.theaterBefore = undefined; }
   await new Promise((res) => { S.onDone = res; S.worklet.port.postMessage('stop'); });
   S.onDone = null;
   $('recBtn').classList.remove('live'); $('recLabel').textContent = 'Record';
@@ -214,7 +218,7 @@ async function stopRecording() {
 
 function drawRecWave() {
   const c = $('wave'), g = c.getContext('2d');
-  const w = c.width = c.clientWidth * devicePixelRatio, h = c.height = 220 * devicePixelRatio;
+  const w = c.width = c.clientWidth * devicePixelRatio, h = c.height = c.clientHeight * devicePixelRatio;
   g.fillStyle = '#0f1218'; g.fillRect(0, 0, w, h);
   const n = Math.min(S.recPeaks.length, Math.floor(w / 3));
   const pk = S.recPeaks.slice(-n);
@@ -318,10 +322,21 @@ async function toggleKeep(file, keep) {
   await refreshTakes();
 }
 
+const isVideoFile = (f) => /\.(mp4|mkv|webm|mov|m4v)$/i.test(f || '');
+
 async function setBacking(file) {
   S.backingFile = file;
   S.backing = file ? await decode(file) : null;
-  $('backingName').textContent = file ? base(file) : 'No backing track (optional, for KTV)';
+  S.backingVideo = isVideoFile(file);
+  const v = $('lyricsVideo');
+  if (S.backingVideo) {
+    v.src = await api.fileUrl(file);
+    $('lyricsTitle').textContent = base(file).replace(/ \[[\w-]{6,}\]\.\w+$/, '');
+  } else if (v.getAttribute('src')) { v.pause(); v.removeAttribute('src'); v.load(); }
+  $('lyricsBox').hidden = !S.backingVideo;
+  if (!S.backingVideo) setTheater(false);
+  S.vidIdleAt = null;
+  $('backingName').textContent = file ? (S.backingVideo ? '🎬 ' : '') + base(file) : 'No backing track (optional, for KTV)';
   $('backingClear').hidden = !file;
   $('mixWrap').hidden = !file;
   $('syncBox').hidden = !file;
@@ -442,7 +457,10 @@ function play(from = currentPos()) {
   };
   start(S.orig, S.gOrig, from);
   start(S.proc, S.gProc, from);
-  if (S.backing) start(S.backing, S.gBack, from - syncDelayMs() / 1000);
+  if (S.backing) {
+    start(S.backing, S.gBack, from - syncDelayMs() / 1000);
+    S.backClock = { t0: when, pos0: from - syncDelayMs() / 1000 };
+  }
   applyGains();
   S.playing = true; S.playStart = when; S.playFrom = from;
   $('playBtn').textContent = '❚❚';
@@ -453,6 +471,7 @@ function stopPlayback(keepPos = false) {
   S.nodes.forEach((n) => { try { n.stop(); } catch {} });
   S.nodes = [];
   S.playing = false;
+  if (!S.recording) S.backClock = null;
   $('playBtn').textContent = '▶';
 }
 
@@ -474,7 +493,7 @@ function peaks(buf, w) {
 let waveCache = null;
 function drawWave() {
   const c = $('wave');
-  const w = c.width = c.clientWidth * devicePixelRatio, h = c.height = 220 * devicePixelRatio;
+  const w = c.width = c.clientWidth * devicePixelRatio, h = c.height = c.clientHeight * devicePixelRatio;
   const g = c.getContext('2d');
   g.fillStyle = '#0f1218'; g.fillRect(0, 0, w, h);
   if (!S.orig) { waveCache = null; return; }
@@ -499,8 +518,45 @@ function drawWave() {
   waveCache = g.getImageData(0, 0, w, h);
 }
 
+// Keeps the muted lyrics video on the backing track's clock. Small drift is absorbed by nudging
+// playbackRate (no visible jumps); only a real jump (> 250 ms) seeks. Output latency is subtracted so
+// the picture matches what you hear; the Picture offset slider covers Bluetooth and TV lag.
+function syncVideo() {
+  const v = $('lyricsVideo');
+  if (!S.backingVideo || !S.ctx || !v.getAttribute('src') || !(v.duration > 0)) return;
+  const off = (+$('vidOff').value || 0) / 1000;
+  if (S.backClock) {
+    const lat = (S.ctx.outputLatency || 0) + (S.ctx.baseLatency || 0);
+    const exp = S.backClock.pos0 + (S.ctx.currentTime - S.backClock.t0) - lat - off;
+    S.videoExpected = exp;
+    if (exp < 0 || exp >= v.duration) {
+      if (!v.paused) v.pause();
+      if (exp < 0 && v.currentTime > 0.05) v.currentTime = 0;
+      return;
+    }
+    if (v.paused) { v.currentTime = exp; v.playbackRate = 1; v.play().catch(() => {}); return; }
+    const err = v.currentTime - exp;
+    S.videoErr = err;
+    if (Math.abs(err) > 0.25) { v.currentTime = exp; v.playbackRate = 1; }
+    else v.playbackRate = Math.max(0.9, Math.min(1.1, 1 - err * 0.8));
+  } else {
+    // Idle: show the frame under the playhead.
+    if (!v.paused) v.pause();
+    const target = Math.max(0, Math.min(v.duration - 0.05, (S.orig ? S.playFrom : 0) - (S.orig ? syncDelayMs() / 1000 : 0) - off));
+    if (S.vidIdleAt == null || Math.abs(S.vidIdleAt - target) > 0.04) { S.vidIdleAt = target; v.currentTime = target; }
+  }
+}
+
+function isTheater() { return document.querySelector('.stage').classList.contains('theater'); }
+function setTheater(on) {
+  document.querySelector('.stage').classList.toggle('theater', !!on);
+  $('theaterBtn').classList.toggle('on', !!on);
+  requestAnimationFrame(() => { if (!S.recording) drawWave(); });
+}
+
 function frameLoop() {
   requestAnimationFrame(frameLoop);
+  syncVideo();
   if (S.recording) return;
   const c = $('wave'), g = c.getContext('2d');
   if (waveCache) {
@@ -683,7 +739,7 @@ async function init() {
     $('ytStatus').hidden = false; $('ytStatus').classList.remove('err');
     $('ytStage').textContent = 'Starting…'; $('ytProg').style.width = '0';
     try {
-      const r = await api.ytFetch(url);
+      const r = await api.ytFetch(url, S.ytFmt);
       $('ytStage').textContent = `Loaded “${r.title}”`;
       $('ytUrl').value = '';
       await setBacking(r.file);
@@ -698,6 +754,21 @@ async function init() {
     }
   };
   $('ytBtn').onclick = ytGo;
+  const setYtFmt = (f) => {
+    S.ytFmt = f === 'mp4' ? 'mp4' : 'mp3';
+    pref('ytFormat', S.ytFmt);
+    document.querySelectorAll('#ytFmt button').forEach((b) => { b.classList.toggle('on', b.dataset.f === S.ytFmt); b.setAttribute('aria-checked', b.dataset.f === S.ytFmt); });
+    $('ytFmtHint').textContent = S.ytFmt === 'mp4' ? 'video, shows on-screen lyrics' : 'audio only';
+  };
+  document.querySelectorAll('#ytFmt button').forEach((b) => (b.onclick = () => setYtFmt(b.dataset.f)));
+  setYtFmt(pref('ytFormat') || 'mp3');
+
+  // Lyrics video controls
+  const setVidOff = (ms) => { $('vidOff').value = ms; $('vidOffOut').textContent = `${ms > 0 ? '+' : ''}${ms} ms`; pref('videoOffsetMs', +ms); S.vidIdleAt = null; };
+  setVidOff(pref('videoOffsetMs') || 0);
+  $('vidOff').oninput = () => setVidOff(+$('vidOff').value);
+  $('vidOff').ondblclick = () => setVidOff(0);
+  $('theaterBtn').onclick = () => setTheater(!isTheater());
   $('ytUrl').onkeydown = (e) => { if (e.key === 'Enter') ytGo(); };
   $('ytUrl').onpaste = () => setTimeout(() => { if (/^https?:\/\//.test($('ytUrl').value.trim())) ytGo(); }, 0);
   $('ytCancel').onclick = () => api.ytCancel();

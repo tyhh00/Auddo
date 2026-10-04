@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; media-src 'self' blob:; img-src 'self' data:">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; media-src 'self' blob: file:; img-src 'self' data:">
   <title>Auddo</title>
   <link rel="stylesheet" href="styles.css">
 </head>
@@ -37,6 +37,13 @@
         <div class="yt">
           <input id="ytUrl" type="text" placeholder="Paste a YouTube link…" spellcheck="false">
           <button id="ytBtn">Get</button>
+        </div>
+        <div class="yt-fmt">
+          <div class="seg" id="ytFmt" role="radiogroup" aria-label="Download as">
+            <button data-f="mp3" role="radio">MP3</button>
+            <button data-f="mp4" role="radio">MP4 + lyrics</button>
+          </div>
+          <span class="muted small" id="ytFmtHint">audio only, small file</span>
         </div>
         <div class="yt-status" id="ytStatus" hidden>
           <div class="progress"><div id="ytProg"></div></div>
@@ -101,6 +108,15 @@
         </div>
       </div>
       <div class="clip-banner" id="clipBanner" hidden></div>
+      <div class="lyrics" id="lyricsBox" hidden>
+        <video id="lyricsVideo" muted playsinline preload="auto"></video>
+        <div class="lyrics-bar">
+          <span class="lyrics-title" id="lyricsTitle">Lyrics video</span>
+          <label class="vid-off" title="Shift the picture if the lyrics run ahead of or behind the music you hear (e.g. Bluetooth headphones)">Picture offset
+            <input type="range" id="vidOff" min="-1000" max="1000" step="10" value="0"><output id="vidOffOut">0 ms</output></label>
+          <button class="ghost small" id="theaterBtn" title="Big video (on automatically while recording)">⤢ Focus</button>
+        </div>
+      </div>
       <canvas id="wave" height="220"></canvas>
       <div class="transport">
         <button id="playBtn" class="play" disabled>▶</button>

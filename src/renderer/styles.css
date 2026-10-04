@@ -154,3 +154,26 @@ button.danger:hover:not(:disabled) { border-color: var(--red); }
 .live-badge span:last-child { font-weight: 500; letter-spacing: 0; }
 .live-badge:not([hidden]) + .status { margin-left: 12px; }
 .live.bottom { margin: 16px 0 0; }
+
+.yt-fmt { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.seg { display: inline-flex; background: var(--bg); border: 1px solid var(--line); border-radius: 999px; padding: 2px; }
+.seg button { border: 0; background: transparent; border-radius: 999px; padding: 3px 10px; font-size: 12px; color: var(--muted); }
+.seg button.on { background: var(--pink); color: #1a0d14; font-weight: 600; }
+
+.lyrics { background: #000; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; display: flex; flex-direction: column; flex: 0 0 auto; }
+.lyrics video { width: 100%; max-height: 34vh; background: #000; display: block; object-fit: contain; }
+.lyrics-bar { display: flex; align-items: center; gap: 12px; padding: 6px 10px; background: var(--panel2); font-size: 12px; }
+.lyrics-title { color: var(--muted); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vid-off { display: flex; align-items: center; gap: 6px; color: var(--muted); }
+.vid-off input { width: 120px; }
+.vid-off output { width: 52px; text-align: right; font-variant-numeric: tabular-nums; color: var(--text); }
+/* Focus: the lyrics video takes over the stage (auto while recording against a video) */
+.stage.theater .lyrics { flex: 1 1 auto; min-height: 0; }
+.stage.theater .lyrics video { max-height: none; height: 100%; flex: 1; min-height: 0; }
+.stage.theater #spec, .stage.theater .stats, .stage.theater #syncBox, .stage.theater .clip-banner { display: none; }
+.stage.theater #wave { height: 90px; flex: 0 0 auto; }
+#theaterBtn.on { background: var(--pink); color: #1a0d14; border-color: var(--pink); }
+#wave { height: 220px; }
+.seg { flex: 0 0 auto; }
+.seg button { white-space: nowrap; }
+.yt-fmt .muted { line-height: 1.25; }

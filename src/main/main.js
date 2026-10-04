@@ -130,8 +130,8 @@ function backingDir() {
   return d;
 }
 
-ipcMain.handle('yt:fetch', (e, url) =>
-  yt.fetchAudio(String(url).trim(), backingDir(), (p) => e.sender.send('yt:progress', p)));
+ipcMain.handle('yt:fetch', (e, url, format) =>
+  yt.fetchMedia(String(url).trim(), backingDir(), (p) => e.sender.send('yt:progress', p), { format: format === 'mp4' ? 'mp4' : 'mp3' }));
 ipcMain.handle('yt:cancel', () => yt.cancel());
 
 ipcMain.handle('takes:reveal', (_e, file) => shell.showItemInFolder(file || takesDir()));
@@ -139,17 +139,35 @@ ipcMain.handle('takes:reveal', (_e, file) => shell.showItemInFolder(file || take
 // ---------------------------------------------------------------- files
 ipcMain.handle('file:open', async (_e, kind) => {
   const r = await dialog.showOpenDialog(win, {
-    title: kind === 'backing' ? 'Choose backing track' : 'Open vocal recording',
+    title: kind === 'backing' ? 'Choose backing track (audio or karaoke video)' : 'Open vocal recording',
     defaultPath: kind === 'backing' ? backingDir() : takesDir(),
     properties: ['openFile'],
-    filters: [{ name: 'Audio', extensions: ['wav', 'mp3', 'flac', 'm4a', 'aac', 'ogg', 'opus', 'aiff', 'aif', 'wma', 'webm', 'mp4'] }],
+    filters: kind === 'backing'
+      ? [{ name: 'Audio or video', extensions: [...AUDIO_EXT, ...VIDEO_EXT] }, { name: 'Video', extensions: VIDEO_EXT }, { name: 'Audio', extensions: AUDIO_EXT }]
+      : [{ name: 'Audio', extensions: [...AUDIO_EXT, 'webm', 'mp4'] }],
   });
   return r.canceled ? null : r.filePaths[0];
 });
 
-// Renderer decodes for waveform/preview. Non-browser formats get transcoded to WAV first.
+const AUDIO_EXT = ['wav', 'mp3', 'flac', 'm4a', 'aac', 'ogg', 'opus', 'aiff', 'aif', 'wma'];
+const VIDEO_EXT = ['mp4', 'mkv', 'webm', 'mov', 'm4v'];
+const isVideo = (f) => VIDEO_EXT.includes(path.extname(f).slice(1).toLowerCase());
+
+// <video> needs a proper file:// URL (spaces, #, %, unicode titles all escaped).
+ipcMain.handle('file:url', (_e, file) => require('url').pathToFileURL(file).href);
+
+// Renderer decodes for waveform/preview. Videos: only the audio track is extracted (as FLAC), so a
+// 1080p karaoke MP4 doesn't get pulled into memory. Non-browser audio formats are transcoded.
 ipcMain.handle('file:read', async (_e, file) => {
-  if (/\.(wav|mp3|flac|ogg|opus|m4a|aac|webm|mp4)$/i.test(file)) return fs.readFileSync(file);
+  if (isVideo(file)) {
+    const tmp = path.join(dsp.TMP, 'decode-' + Date.now() + '.flac');
+    fs.mkdirSync(path.dirname(tmp), { recursive: true });
+    await dsp.run(['-y', '-i', file, '-vn', '-ac', '2', '-ar', '48000', '-c:a', 'flac', tmp]);
+    const data = fs.readFileSync(tmp);
+    fs.rmSync(tmp, { force: true });
+    return data;
+  }
+  if (/\.(wav|mp3|flac|ogg|opus|m4a|aac)$/i.test(file)) return fs.readFileSync(file);
   const tmp = path.join(dsp.TMP, 'decode-' + Date.now() + '.wav');
   fs.mkdirSync(path.dirname(tmp), { recursive: true });
   await dsp.run(['-y', '-i', file, '-c:a', 'pcm_f32le', tmp]);

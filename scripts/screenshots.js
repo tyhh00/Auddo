@@ -51,7 +51,15 @@ async function makeAssets() {
   const mic = path.join(T, 'mic.wav'), micClip = path.join(T, 'mic-clip.wav');
   await dsp.run(['-y', '-stream_loop', '4', '-i', take, '-c:a', 'pcm_s16le', mic]);
   await dsp.run(['-y', '-stream_loop', '4', '-i', clipped, '-c:a', 'pcm_s16le', micClip]);
-  return { take, clipped, backing, mic, micClip };
+  // Karaoke-style demo video: original placeholder captions only (no real lyrics).
+  const video = path.join(TAKES, 'Backing', 'Demo karaoke video.mp4');
+  const font = "fontfile='C\\:/Windows/Fonts/segoeuib.ttf'";
+  const caps = ['Your karaoke video plays here', 'in sync with the backing track', 'so you can read along', 'while Auddo records your voice'];
+  const draw = caps.map((c, i) => `drawtext=${font}:text='${c}':fontcolor=white:fontsize=54:borderw=3:bordercolor=0x2a1033:x=(w-tw)/2:y=h*0.58:enable='between(t,${i * 4},${i * 4 + 4})'`).join(',');
+  await dsp.run(['-y', '-f', 'lavfi', '-i', 'gradients=s=1280x720:c0=0x2a1440:c1=0x0d1a3a:x0=0:y0=0:x1=1280:y1=720:d=16:r=30',
+    '-i', backing, '-vf', `${draw},drawtext=${font}:text='Demo backing - chord loop':fontcolor=0xe46fa3:fontsize=30:x=48:y=40`,
+    '-map', '0:v', '-map', '1:a', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-preset', 'veryfast', '-c:a', 'aac', '-shortest', video]);
+  return { take, clipped, backing, video, mic, micClip };
 }
 
 async function launch(mic) {
@@ -126,6 +134,18 @@ const rendered = (page) => page.waitForFunction(() => window.__S.proc && !docume
   await page.click('#guideBtn');
   await page.waitForTimeout(300);
   await shot(page, 'guide.png');
+  await app.close();
+
+  // ---- karaoke video backing, recording in Focus mode
+  ({ app, page } = await launch(a.mic));
+  await page.evaluate((f) => window.setBacking(f), a.video);
+  await page.waitForFunction(() => document.getElementById('lyricsVideo').duration > 0, null, { timeout: 15000 });
+  await page.click('#ytFmt button[data-f="mp4"]');
+  await page.click('#recBtn');
+  await page.waitForTimeout(6800);
+  await shot(page, 'karaoke.png');
+  await page.click('#recBtn');
+  await rendered(page);
   await app.close();
 
   // ---- session 2: clipped mic + clipped take

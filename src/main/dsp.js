@@ -144,8 +144,15 @@ async function normalize(input, output, targetLufs, cwd, measured) {
   const gain = targetLufs != null && m.I != null ? targetLufs - m.I : 0;
   const lim = [`limit=${f(db2lin(CEILING_DB - 0.3), 4)}`, 'attack=1.5', 'release=80', 'level=0'];
   if (capabilities().limiterLatency) lim.push('latency=1');
-  const af = [`volume=${f(gain, 2)}dB`, resample(SR * 4), `alimiter=${lim.join(':')}`, resample(SR)].join(',');
-  await run(['-y', '-i', input, '-af', af, '-c:a', 'pcm_f32le', output], { cwd });
+  const pass = (g) => run(['-y', '-i', input, '-af', [`volume=${f(g, 2)}dB`, resample(SR * 4), `alimiter=${lim.join(':')}`, resample(SR)].join(','), '-c:a', 'pcm_f32le', output], { cwd });
+  await pass(gain);
+  // Very peaky material (a punchy backing track) loses loudness to the limiter. Like a mastering
+  // limiter, push once more by the measured shortfall; the ceiling still holds.
+  if (targetLufs != null && m.I != null) {
+    const got = await measure(output, cwd);
+    const short = got.I != null ? targetLufs - got.I : 0;
+    if (short > 0.5) { await pass(gain + short); return gain + short; }
+  }
   return gain;
 }
 

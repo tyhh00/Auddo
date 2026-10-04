@@ -1,4 +1,5 @@
-// Paste-a-link backing tracks: yt-dlp fetches the best audio stream, our ffmpeg makes the MP3.
+// Paste-a-link backing tracks: yt-dlp fetches the best audio stream (our ffmpeg makes the MP3), or a
+// karaoke video merged to MP4 so the on-screen lyrics can play in sync while you sing.
 // yt-dlp is downloaded on first use; Electron itself serves as its JS runtime (ELECTRON_RUN_AS_NODE),
 // so nothing else (deno/node) needs installing.
 const { spawn } = require('child_process');
@@ -73,10 +74,15 @@ function runYt(args, onLine) {
 const safeName = (s) => s.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').replace(/\s+/g, ' ').trim().slice(0, 140);
 
 /**
- * @returns {Promise<{file: string, title: string, cached?: boolean}>}
+ * Downloads a link as a backing track.
+ *   format 'mp3': best audio stream -> LAME V0 MP3.
+ *   format 'mp4': video (<=1080p, H.264 preferred so Chromium plays it) + audio merged into MP4,
+ *                 for karaoke videos whose on-screen lyrics you want to read while singing.
+ * @returns {Promise<{file: string, title: string, video: boolean}>}
  */
-async function fetchAudio(url, outDir, onProgress = () => {}) {
+async function fetchMedia(url, outDir, onProgress = () => {}, { format = 'mp3' } = {}) {
   if (!/^https?:\/\//i.test(url)) throw new Error('Paste a full link (https://…)');
+  const video = format === 'mp4';
   fs.mkdirSync(outDir, { recursive: true });
   onProgress({ stage: 'Preparing downloader…', p: 0 });
   await ensureBinary((p) => onProgress({ stage: 'Fetching yt-dlp (first run only)…', p: p * 0.1 }));
@@ -85,14 +91,31 @@ async function fetchAudio(url, outDir, onProgress = () => {}) {
   fs.mkdirSync(tmp, { recursive: true });
   const args = [
     '--no-playlist', '--no-mtime', '--newline', '--progress',
-    '-f', 'bestaudio/best',
     '--js-runtimes', `node:${process.execPath}`,
     '-P', tmp, '-o', '%(title).150B [%(id)s].%(ext)s',
-    url,
   ];
+  if (video) {
+    args.push(
+      '-f', 'bv*[height<=1080][vcodec^=avc1]+ba[acodec^=mp4a]/b[ext=mp4][height<=1080]/bv*[height<=1080]+ba/b',
+      '--merge-output-format', 'mp4', '--ffmpeg-location', dsp.FFMPEG,
+    );
+  } else {
+    args.push('-f', 'bestaudio/best');
+  }
+  args.push(url);
+
+  // Video mode downloads two streams (video, then audio); progress runs 0-100 for each.
+  let part = 0;
   const onLine = (l) => {
+    if (/\[download\] Destination:/.test(l)) part++;
+    if (/\[Merger\]/.test(l)) return onProgress({ stage: 'Merging video and audio…', p: 0.9 });
     const m = /\[download\]\s+([\d.]+)%/.exec(l);
-    if (m) onProgress({ stage: 'Downloading audio…', p: 0.1 + (+m[1] / 100) * 0.7 });
+    if (!m) return;
+    const frac = +m[1] / 100;
+    if (video) {
+      const vid = part <= 1;
+      onProgress({ stage: vid ? 'Downloading video…' : 'Downloading audio…', p: 0.1 + (vid ? frac * 0.65 : 0.65 + frac * 0.15) });
+    } else onProgress({ stage: 'Downloading audio…', p: 0.1 + frac * 0.7 });
   };
   try {
     await runYt(args, onLine);
@@ -101,25 +124,31 @@ async function fetchAudio(url, outDir, onProgress = () => {}) {
     // YouTube changes often; a stale yt-dlp is the usual cause. Self-update once and retry.
     onProgress({ stage: 'Updating yt-dlp and retrying…', p: 0.1 });
     await runYt(['-U']).catch(() => {});
+    part = 0;
     await runYt(args, onLine);
   }
 
-  const got = fs.readdirSync(tmp).filter((n) => !/\.(part|ytdl|json)$/.test(n));
-  if (!got.length) throw new Error('No audio was downloaded');
+  const got = fs.readdirSync(tmp).filter((n) => !/\.(part|ytdl|json)$/.test(n) && !/\.f\d+\./.test(n));
+  if (!got.length) throw new Error('Nothing was downloaded');
   const src = path.join(tmp, got[0]);
   const title = got[0].replace(/ \[[\w-]{6,}\]\.\w+$/, '').replace(/\.\w+$/, '');
-  const dest = path.join(outDir, safeName(got[0].replace(/\.\w+$/, '')) + '.mp3');
+  const dest = path.join(outDir, safeName(got[0].replace(/\.\w+$/, '')) + (video ? '.mp4' : '.mp3'));
 
   if (!fs.existsSync(dest)) {
-    onProgress({ stage: 'Converting to MP3…', p: 0.85 });
-    // LAME V0 straight from the source stream at its native rate.
-    await dsp.run(['-y', '-i', src, '-vn', '-map_metadata', '-1', '-metadata', `title=${title}`, '-c:a', 'libmp3lame', '-q:a', '0', dest]);
+    if (video) {
+      onProgress({ stage: 'Saving video…', p: 0.95 });
+      fs.copyFileSync(src, dest);
+    } else {
+      onProgress({ stage: 'Converting to MP3…', p: 0.85 });
+      // LAME V0 straight from the source stream at its native rate.
+      await dsp.run(['-y', '-i', src, '-vn', '-map_metadata', '-1', '-metadata', `title=${title}`, '-c:a', 'libmp3lame', '-q:a', '0', dest]);
+    }
   }
   fs.rmSync(tmp, { recursive: true, force: true });
   onProgress({ stage: 'Done', p: 1 });
-  return { file: dest, title };
+  return { file: dest, title, video };
 }
 
 function cancel() { if (current) current.kill(); }
 
-module.exports = { fetchAudio, cancel, setBinDir, ensureBinary };
+module.exports = { fetchMedia, cancel, setBinDir, ensureBinary };

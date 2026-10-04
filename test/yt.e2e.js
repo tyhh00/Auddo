@@ -6,6 +6,7 @@ const os = require('os');
 const dsp = require('../src/main/dsp');
 
 const URL = process.argv[2] || 'https://www.youtube.com/watch?v=jNQXAC9IVRw'; // 19 s, "Me at the zoo"
+const FMT = process.argv[3] === 'mp4' ? 'mp4' : 'mp3';
 const T = path.join(os.tmpdir(), 'auddo-yt');
 fs.rmSync(T, { recursive: true, force: true });
 
@@ -20,6 +21,7 @@ fs.rmSync(T, { recursive: true, force: true });
   const t0 = Date.now();
   const stages = new Set();
   const poll = setInterval(async () => { try { stages.add(await page.textContent('#ytStage')); } catch {} }, 150);
+  await page.click(`#ytFmt button[data-f="${FMT}"]`);
   await page.fill('#ytUrl', URL);
   await page.press('#ytUrl', 'Enter');
   await page.waitForTimeout(800);
@@ -28,12 +30,20 @@ fs.rmSync(T, { recursive: true, force: true });
   clearInterval(poll);
   const r = await page.evaluate(() => ({ file: window.__S.backingFile, dur: window.__S.backing?.duration, name: document.getElementById('backingName').textContent, stage: document.getElementById('ytStage').textContent }));
   await page.screenshot({ path: path.join(T, 'yt-done.png') });
+  const vid = await page.evaluate(() => ({ shown: !document.getElementById('lyricsBox').hidden, dur: document.getElementById('lyricsVideo').duration }));
+  if (FMT === 'mp4') console.log(vid.shown && vid.dur > 15 ? 'PASS  lyrics video panel shows the download' : 'FAIL  video panel', vid);
   await app.close();
   console.log('stages seen:', [...stages].filter(Boolean).join(' | '));
   console.log(r, `${((Date.now() - t0) / 1000).toFixed(1)} s`);
   if (!r.file) { console.log('FAIL', r.stage); process.exit(1); }
   const probe = await dsp.run(['-i', r.file, '-f', 'null', '-']).catch((e) => e.message);
-  const ok = r.file.endsWith('.mp3') && r.file.includes(path.join('takes', 'Backing')) && r.dur > 15 && /mp3/.test(probe);
-  console.log(ok ? 'PASS  link -> MP3 -> loaded as backing' : 'FAIL'); console.log('screens in', T);
+  let ok = r.file.endsWith('.' + FMT) && r.file.includes(path.join('takes', 'Backing')) && r.dur > 15;
+  if (FMT === 'mp3') ok = ok && /mp3/.test(probe);
+  else {
+    ok = ok && /Video: h264/.test(probe) && /Audio: aac/.test(probe);
+  }
+  const streams = probe.split('\n').filter((l) => /Stream/.test(l)).join('\n');
+  console.log(ok ? `PASS  link -> ${FMT.toUpperCase()} -> loaded as backing` : 'FAIL', '\n' + streams);
+  console.log('screens in', T);
   process.exit(ok ? 0 : 1);
 })().catch((e) => { console.error(e); process.exit(1); });

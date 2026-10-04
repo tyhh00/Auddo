@@ -18,6 +18,8 @@ Built with Electron and FFmpeg for Windows. Tuned for end-address dynamic mics l
 
 ![Recording against a backing track](docs/screenshots/recording.png)
 
+![Recording in Focus mode against a karaoke video](docs/screenshots/karaoke.png)
+
 ### 🔴 Live voice for Discord, OBS and calls
 - The same presets and sliders, running **in real time**: AI denoise, expander, two-stage compressor, EQ, harmonic sheen, de-esser, stereo reverb and echo, a voice-gated loudness leveler and a look-ahead limiter at −1 dBFS.
 - Choose the AI denoiser: **GTCRN** (best quality) or **RNNoise** (lighter on CPU). Both run as WebAssembly inside an AudioWorklet.
@@ -28,7 +30,8 @@ Built with Electron and FFmpeg for Windows. Tuned for end-address dynamic mics l
 ![Live voice routed to a virtual cable](docs/screenshots/live.png)
 
 ### 🎤 Sing against a backing track
-- Load any audio file as the backing track, or **paste a YouTube link**. Auddo downloads the best audio stream and saves an MP3 into `Music\Auddo\Backing`, ready to sing over. yt-dlp is fetched automatically on first use and self-updates when YouTube changes; nothing else to install.
+- Load any audio file as the backing track, or **paste a YouTube link** and choose **MP3** (audio only) or **MP4** (the video, up to 1080p). Downloads go to `Music\Auddo\Backing`. yt-dlp is fetched automatically on first use and self-updates when YouTube changes; nothing else to install.
+- **Karaoke videos play in sync.** With an MP4 (or MKV/WebM/MOV) backing, the video plays above the waveform, locked to the track's audio clock. It follows playback, seeking and recording, and drift is corrected smoothly. **Focus** mode enlarges the video, and turns on by itself while you record, so on-screen lyrics are easy to read. A **picture offset** control lines the video up with what you actually hear (useful with Bluetooth headphones or a TV).
 - The track plays on the **same sample clock** as the recording, so its start position on the vocal timeline is known exactly. The measured device latency is compensated automatically.
 - **Vocal timing control** for laggy earpieces (Bluetooth can be 150–300 ms or more): drag, nudge in ±10 ms / ±1 ms steps, or type any offset. The value is saved with each take.
 - Separate vocal and backing levels; the export can include the mix.
@@ -115,7 +118,8 @@ npm test           # DSP: loudness accuracy, true-peak ceiling, noise reduction,
 npm run test:e2e   # drives the real app with a fake mic: record → render → A/B → export
 npm run test:lib   # clipping detection + repair, takes library, auto-clean, sync range
 npm run test:live  # live chain: denoiser latency, noise reduction, loudness, -1 dBFS ceiling, going live
-npm run test:yt    # paste a YouTube link (needs network)
+npm run test:video # karaoke-video backing: picture/audio sync, Focus mode, offset, MP4 mix export
+npm run test:yt    # paste a YouTube link (needs network); add "-- '' mp4" for video mode
 node scripts/screenshots.js   # regenerate the screenshots above from a synthetic demo
 ```
 
